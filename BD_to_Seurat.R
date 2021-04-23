@@ -18,7 +18,7 @@ library(reticulate)
 
 
 # Use the RSEC Mol per cell csv file from SBG output. Read it in but notice 'skip=8' as the first 8 lines just contain info about the run.
-Abseq_1 <- read.csv(file = '/home/cathal_king/Downloads/Combined_BD-Demo-WTA-AbSeq-SMK_RSEC_MolsPerCell.csv', sep = ',', header = TRUE, row.names = 1, check.names = F, skip = 8)
+Abseq_1 <- read.csv(file = '~/Downloads/Combined_BD-Demo-WTA-AbSeq-SMK_RSEC_MolsPerCell.csv', sep = ',', header = TRUE, row.names = 1, check.names = F, skip = 8)
 # transpose count matrix 
 Abseq_1P <- t(Abseq_1[, str_detect(string = colnames(Abseq_1), pattern = 'pAbO')])
 
