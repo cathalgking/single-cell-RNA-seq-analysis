@@ -1,0 +1,1329 @@
+---
+title: "Vignette"
+output:
+  rmdformats::readthedown:
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+## Global options
+knitr::opts_chunk$set(cache = TRUE, warning = FALSE, message = FALSE, cache.lazy = FALSE)
+```
+
+
+## Flowchart
+
+![Workflow Flowchart.](C:/Users/Cathal/Downloads/pipeline__new.drawio.png)
+
+
+```{r, message=FALSE}
+
+##########################################################################
+####################### Load relevant libraries ##########################
+##########################################################################
+
+library(dplyr)
+library(tidyr)
+library(deMULTIplex)
+library(ggplot2)
+library(stringr)
+library(ShortRead)
+library(Seurat)
+library(SeuratObject)
+library(SingleCellExperiment)
+library(scater)
+library(scran)
+library(tibble)
+
+```
+
+
+## SeqGeq
+* Make a QC Gate
+![QC Gate](C:/Users/Cathal/Documents/make_QC_gate1.png)
+* Within gate. 2 populations.
+![Within gate](C:/Users/Cathal/Documents/look_inside_gate.png)
+* Possibly Abseq and mRNA. Abseq sum plot. 
+![Abseq sum](C:/Users/Cathal/Documents/Abseq_sum.png)
+
+* mRNA sum. 
+![mRNA sum](C:/Users/Cathal/Documents/mRNA_sum.png)
+
+
+* Gate on 2 populations. Different expression levels.
+![mRNA sum](C:/Users/Cathal/Documents/gate1and2mrna_sum.png)
+
+## Append SevenBridges data-frames per Cartridge
+
+```{r}
+
+##########################################################################
+####################### Appending SB data-frames #########################
+##########################################################################
+
+### Append cartridge 1 and cartridge 2 data tables
+
+## read in files
+df_cartridge1 <- read.csv(file = "C:/Users/Cathal/Desktop/Cartridge-1-NoLMORSEC_MolsPerCell.csv")
+df_cartridge2 <- read.csv(file = "C:/Users/Cathal/Desktop/Cartridge-2-NoLMORSEC_MolsPerCell.csv")
+
+## add suffix after rownames
+df_cartridge1$Cell_Index = paste0(df_cartridge1$Cell_Index, '_1')
+
+## as character for the df that is not suffixed
+df_cartridge2$Cell_Index <- as.character(df_cartridge2$Cell_Index)
+
+## rbind()
+counts_matrix <- rbind(df_cartridge1, df_cartridge2)
+
+
+head(counts_matrix[1:10,1:3])
+
+### Optional
+
+## replace NA's with 0's
+#df_appended <- mutate_all(df_appended, ~replace(., is.na(.), 0))
+
+#counts_matrix$Cell_Index <- as.integer(counts_matrix$Cell_Index)
+
+## write to file
+#write.csv(counts_matrix, file = "C:/Users/Cathal/Downloads/df_cartridge_appended_rbind.csv", row.names = FALSE)
+
+
+
+```
+
+
+
+
+
+## deMULTIplex workflow - Cartridge 1
+
+```{r}
+
+# 18,966,461 reads in Cartridge 1 R1 and R2
+# C:/Users/Cathal/Desktop/data_Feb/FASTQ_Generation_2022-02-24/Cartridge_1_L001/Cartridge-1_S1_L001_R1_001.fastq.gz # non-parsed
+# C:/Users/Cathal/Desktop/data_Feb/FASTQ_Generation_2022-02-24/Cartridge_1_L001/Cartridge-1_S1_L001_R2_001.fastq.gz # non-parsed
+
+## parsed ~500 thousand reads
+# test_sli_R1.fq.filtered.gz # parsed
+# test_sli_R2.fq.filtered.gz # parsed
+
+
+# 1. Read the full FASTQs into R using ShortRead (command: 
+
+# memory.limit(size=1800000)
+# 
+## R1
+r1 <- readFastq("C:/Users/Cathal/Desktop/data_Feb/FASTQ_Generation_2022-02-24/Cartridge_1_L001/test_sli_R1.fq.filtered.gz") #)
+#and converted to dataframe containing the first 76 bases (command:
+readTable_r1 <- as.data.frame(subseq(sread(r1), 1, 76))
+
+
+
+
+## R2
+r2 <- readFastq("C:/Users/Cathal/Desktop/data_Feb/FASTQ_Generation_2022-02-24/Cartridge_1_L001/test_sli_R2.fq.filtered.gz") #)
+#and converted to dataframe containing the first 76 bases (command:
+readTable_r2 <- as.data.frame(subseq(sread(r2), 1, 76))
+
+
+
+```
+
+
+
+
+
+```{r}
+
+#memory.limit(size=1800000)
+
+# 5.194e5
+
+## R1
+
+###
+#2. Parsed the R1 dataframe to include only 300K total reads to minimize compute and split into CellID and UMI sections. Command:
+readTable_r1_2 <- as.data.frame(matrix(0L, nrow=2e5, ncol=2))
+colnames(readTable_r1_2) <- c("cell","umi")
+
+#readTable_r1_2 <- as.character(readTable_r1_2)
+
+for (i in 1:2e5) {
+  temp <- unlist(strsplit(readTable_r1$x[i], split=""))
+  readTable_r1_2$cell[i] <- paste(temp[c(1:9,22:30,44:52)], collapse='')
+  readTable_r1_2$umi[i] <- paste(temp[c(53:60)], collapse='')
+}
+
+head(readTable_r1_2)
+
+#
+#
+#
+# ## R2
+#
+#2. Parsed the R1 dataframe to include only 300K total reads to minimize compute and split into CellID and UMI sections. Command:
+readTable_r2_2 <- as.data.frame(matrix(0L, nrow=5.194e5, ncol=2))
+colnames(readTable_r2_2) <- c("cell","umi")
+
+#readTable_r1_2 <- as.character(readTable_r1_2)
+
+for (i in 1:5.194e5) {
+  temp <- unlist(strsplit(readTable_r2$x[i], split=""))
+  readTable_r2_2$cell[i] <- paste(temp[c(1:9,22:30,44:52)], collapse='')
+  readTable_r2_2$umi[i] <- paste(temp[c(53:60)], collapse='')
+}
+
+head(readTable_r2_2)
+
+
+```
+
+
+```{r}
+
+############################# trying to parse out the full 52 instead
+
+## R1
+
+###
+#2. Parsed the R1 dataframe to include only 300K total reads to minimize compute and split into CellID and UMI sections. Command:
+readTable_r1_2 <- as.data.frame(matrix(0L, nrow=2e5, ncol=2))
+colnames(readTable_r1_2) <- c("cell","umi")
+
+#readTable_r1_2 <- as.character(readTable_r1_2)
+
+for (i in 1:2e5) {
+  temp <- unlist(strsplit(readTable_r1$x[i], split=""))
+  readTable_r1_2$cell[i] <- paste(temp[c(1:52)], collapse='')
+  readTable_r1_2$umi[i] <- paste(temp[c(53:60)], collapse='')
+}
+
+head(readTable_r1_2)
+
+#
+#
+#
+# ## R2
+#
+#2. Parsed the R1 dataframe to include only 300K total reads to minimize compute and split into CellID and UMI sections. Command:
+readTable_r2_2 <- as.data.frame(matrix(0L, nrow=2e5, ncol=2))
+colnames(readTable_r2_2) <- c("cell","umi")
+
+#readTable_r1_2 <- as.character(readTable_r1_2)
+
+for (i in 1:2e5) {
+  temp <- unlist(strsplit(readTable_r2$x[i], split=""))
+  readTable_r2_2$cell[i] <- paste(temp[c(1:52)], collapse='')
+  readTable_r2_2$umi[i] <- paste(temp[c(53:60)], collapse='')
+}
+
+head(readTable_r2_2)
+
+```
+
+
+
+
+```{r}
+# 3. Identified the most abundant cell barcodes (total reads >= 10) and parsed both the R1_2 and R2 dataframes using this index. Command:
+
+temp <- table(readTable_r1_2$cell)
+temp <- names(temp)[which(temp >= 10)] ## 4640 cells
+ind <- which(readTable_r1_2$cell %in% temp)
+
+readTable_r1_3 <- readTable_r1_2[ind, ] ## dim = 62040 x 2
+readTable_r2_2_t <- readTable_r2$x[ind] ## dim = 62040 x 1
+
+
+
+## R2 ?
+temp <- table(readTable_r2_2$cell)
+temp <- names(temp)[which(temp >= 10)] ## 4640 cells
+ind <- which(readTable_r2_2$cell %in% temp)
+
+readTable_r2_3 <- readTable_r2_2[ind, ] ## dim = 62040 x 2
+readTable_r2_2 <- readTable_r2$x[ind] ## dim = 62040 x 1
+
+
+```
+
+
+
+```{r}
+
+# 4. Identified reads in R2_2 dataframe including either MULTI-seq Bar1 or Bar2 sequences, combined indexed R1_3 and R2_2 into a final readTable object. Command:
+
+ind <- c(grep("GGAGAAGA", readTable_r2_2_t),grep("CCACAATG", readTable_r2_2_t))
+readTable_final <- as.data.frame(matrix(0L, nrow=length(ind), ncol=3)) ## dim = 3409 x 3
+colnames(readTable_final) <- c("Cell","UMI","Sample")
+readTable_final[,c("Cell","UMI")] <- readTable_r1_3[ind, ]
+temp <- readTable_r2_2_t[ind]
+readTable_final[grep("GGAGAAGA", temp),'Sample'] <- "GGAGAAGA"
+readTable_final[grep("CCACAATG", temp),'Sample'] <- "CCACAATG"
+
+```
+
+
+
+```{r}
+# 5. Ran MULTIseq.Align on this object and visualized the results. Command:
+
+barTable_final <- MULTIseq.align(readTable_final, cellIDs=unique(readTable_final$Cell), ref = unique(readTable_final$Sample))
+
+head(barTable_final)
+
+p <- ggplot(barTable_final, aes(x=Bar1, y=Bar2)) + geom_point(size=1) + theme_classic()
+p
+
+```
+
+
+
+```{r}
+
+# write out barTable
+write.csv(barTable_final, file = "C:/Users/Cathal/Desktop/After_parsing/bartable_full52.csv")
+
+
+
+## Visualise scatter plot
+
+##
+# bartable_cartridge1 <- read.csv(file = "C:/Users/Cathal/Downloads/bartable_9e5_c1.csv")
+# ggplot(bartable_cartridge1, aes(x=Bar1, y=Bar2)) + geom_point(size=1) + theme_classic()
+
+
+```
+
+
+
+* Scatter plot shows an orthogonal pattern
+
+
+```{r}
+
+hist(log(bartable_cartridge1$Bar1))
+hist(log(bartable_cartridge1$Bar2))
+
+```
+
+
+## deMULTIplex workflow - Cartridge 2
+
+```{r}
+# same as above
+```
+
+
+## Export both deMULTIplex barTable's and convert nt strings to Cell_Index integers
+```{r}
+## Files
+# bartable_cartridge1 <- read.csv(file = "C:/Users/Cathal/Downloads/bartable_9e5_c1.csv")
+# bartable_cartridge2 <- read.csv(file = "C:/Users/Cathal/Desktop/barTable_c2.csv")
+
+
+```
+
+
+## Append deMULTIplex barTable's per Cartridge
+
+```{r}
+
+
+## read in files
+bartable_cartridge1_conv <- read.csv(file = "C:/Users/Cathal/Desktop/New_bar_table_converted_c1.csv")[,3:8]
+bartable_cartridge2_conv <- read.csv(file = "C:/Users/Cathal/Desktop/New_bar_table_converted_c2.csv")[,3:8]
+
+# remove and relocate cols
+bartable_cartridge1_conv <- bartable_cartridge1_conv %>% select(-(nUMI:identifier_no)) %>% relocate(Cell_Index)
+bartable_cartridge2_conv <- bartable_cartridge2_conv %>% select(-(nUMI:identifier_no)) %>% relocate(Cell_Index)
+
+
+
+# add suffix after rownames
+bartable_cartridge1_conv$Cell_Index = paste0(bartable_cartridge1_conv$Cell_Index, '_1')
+
+head(bartable_cartridge1_conv)
+
+## as character for the df that is not suffixed
+bartable_cartridge2_conv$Cell_Index <- as.character(bartable_cartridge2_conv$Cell_Index)
+
+## rbind()
+dM_counts_matrix <- rbind(bartable_cartridge1_conv, bartable_cartridge2_conv)
+
+head(dM_counts_matrix)
+
+
+## write to file
+# write.csv(counts_matrix, file = "C:/Users/Cathal/Downloads/df_cartridge_appended_rbind.csv", row.names = FALSE)
+
+```
+
+
+
+## Merge SB and deMULTIplex data-frames
+
+```{r}
+##########################################################################
+###################### Merge SB and dM data ##############################
+##########################################################################
+
+# After nt string is converted to Cell_Index integer & dM data-frames have been merged, read in df and merge to SB df.
+
+# dM
+head(dM_counts_matrix)
+# SB 
+head(counts_matrix)[1:10,1:3]
+
+## merge
+# full_join
+full_counts_matrix <- full_join(dM_counts_matrix, counts_matrix, by = 'Cell_Index')
+
+## replace NA's with 0's
+full_counts_matrix <- mutate_all(full_counts_matrix, ~replace(., is.na(.), 0))
+
+
+
+head(full_counts_matrix)[1:5,1:5]
+
+## replace NA's with 0's
+df_full <- mutate_all(full_counts_matrix, ~replace(., is.na(.), 0))
+
+# merged data
+head(df_full)[1:5,1:5]
+
+# only SB data in counts matrix
+head(counts_matrix)[1:5,1:5]
+
+```
+
+
+## Construct single-cell object
+
+* Read in count matrix from SevenBridges OR Read in an already transposed data-frame. Then format data to construct a Seurat or SCE (Single Cell Experiment) object. Most single-cell algorithms and packages expect matrices to be in genes x cells format (genes as rownames , cells as colnames) and SevenBridges outputs the data tables in cell x genes format.
+
+
+```{r}
+
+##########################################################################
+######################## Read in data ####################################
+##########################################################################
+
+##1 - transpose in R and construct single-cell object
+# transpose existing df
+#counts_matrix_transposed_existing <- t(counts_matrix)
+
+
+
+##2 - transpose matrix in Excel and read in
+# write out
+#write.csv(counts_matrix, file = "C:/Users/Cathal/Desktop/counts_mtx_untransposed.csv", row.names = F)
+
+## - 2 read in the already transposed data-frame
+
+counts_matrix_new_tt <- read.table("C:/Users/Cathal/Desktop/counts_mtx_miseq_tt.txt", header = T, sep = '\t')
+
+colnames(counts_matrix_new_tt) <- gsub("X", "", colnames(counts_matrix_new_tt))
+
+#"C:\Users\Cathal\Documents\df_appended_tt.txt"
+
+rownames(counts_matrix_new_tt) <- counts_matrix_new_tt$Cell_Index
+
+counts_matrix_new_tt$Cell_Index <- NULL
+
+counts_matrix_sc <- as.matrix(counts_matrix_new_tt)
+
+####
+
+
+
+##########################################################################
+######################## Make SC obj #####################################
+##########################################################################
+
+# SCE
+sce <- SingleCellExperiment(assays = list(counts = counts_matrix_sc))
+
+# Seurat
+seurat <- CreateSeuratObject(counts = counts_matrix_sc)
+
+
+###
+
+
+
+## View
+
+sce
+
+seurat
+
+head(rownames(sce))
+
+head(rownames(seurat))
+
+
+
+
+##########################################################################
+############# Optional - remove row(s) from object assay #################
+##########################################################################
+
+
+## remove certain genes / features
+# counts <- GetAssayData(seurat_all)
+# counts <- counts[-(which(rownames(counts) %in% c('LMO1','LMO2'))),]
+# seurat_all_reduced <- subset(seurat_all, features = rownames(counts))
+# 
+# #
+# counts <- GetAssayData(seurat_all_reduced)
+# counts <- counts[-(which(rownames(counts) %in% c('LMO-A1','LMO-A2'))),]
+# seurat_all_reduced3 <- subset(seurat_all_reduced, features = rownames(counts))
+
+
+
+```
+
+
+# Quality control metrics and plots - remove low quality cells if needed
+
+```{r}
+
+##########################################################################
+################################ QC ######################################
+##########################################################################
+
+
+# nFeature_RNA is the number of genes detected in each cell. nCount_RNA is the total number of molecules detected within a cell
+
+# observe counts per gene in each row of the seurat object
+counts_per_gene <- Matrix::rowSums(seurat)
+
+
+# https://satijalab.org/seurat/articles/pbmc3k_tutorial.html
+
+
+# nFeature_RNA is the number of genes detected in each cell. nCount_RNA is the total number of molecules detected within a cell
+
+
+# The [[ operator can add columns to object metadata. This is a great place to stash QC stats
+#seurat[["percent.mt"]] <- PercentageFeatureSet(seurat, pattern = "^MT-")
+
+
+# Visualize QC metrics as a violin plot
+VlnPlot(seurat, features = c("nFeature_RNA", "nCount_RNA"), ncol = 2)
+
+
+plot <- FeatureScatter(seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot
+
+## If cells do need to be removed
+# seurat <- subset(seurat, subset = nFeature_RNA > 200 & nFeature_RNA < 2500)
+
+
+```
+
+
+## Normalise the counts matrix
+
+```{r}
+
+seurat
+##
+sce
+
+
+##########################################################################
+####################### Seurat Normalise #################################
+##########################################################################
+
+
+
+seurat <- NormalizeData(object = seurat, normalization.method = "LogNormalize")
+
+
+
+
+
+##########################################################################
+####################### SCE Normalise ####################################
+##########################################################################
+
+
+# First, remove any non positive counts
+sce <- sce[, colSums(counts(sce)) > 0]
+
+# log normalise using scater
+sce <- scater::logNormCounts(sce)
+
+# view the logcount matrix
+#logcounts(sce)
+
+# view the sce object to ensure normalised data is now there
+seurat
+##
+sce
+
+```
+
+
+# Optional -- Convert from Seurat <-> SCE object
+
+```{r}
+
+##########################################################################
+####################### Seurat to SCE ####################################
+##########################################################################
+
+
+## This function can produce some strange behavior so be cautious using it
+# sce_conv <- as.SingleCellExperiment(seurat)
+
+
+
+
+
+##########################################################################
+####################### SCE to Seurat ####################################
+##########################################################################
+
+## option 1
+
+#seurat_sce <- as.Seurat(sce, counts = "counts", data = "logcounts")
+
+
+## option 2
+# sce.to.seurat <- CreateSeuratObject(counts = counts(seurat.to.sce), meta.data = as.data.frame(colData(seurat.to.sce)))
+# sce.to.seurat <- SetAssayData(object = sce.to.seurat, slot = "data", new.data = logcounts(seurat.to.sce))
+# 
+# # Set feature metadata, AKA rowData. Super intuitive, right?
+# sce.to.seurat[["RNA"]][[]] <- as.data.frame(rowData(seurat.to.sce))
+
+
+
+```
+
+
+# Handling metadata - adding SMK, LMO and Immune classification data from SevenBridges to meta-data slot. 
+
+
+```{r}
+
+head(seurat)
+
+### Prepare meta-data to be added to Seurat object
+
+
+##########################################################################
+####################### Adding metadata to object ########################
+##########################################################################
+
+
+### append each from Cartridge 1 and Cartridge 2
+
+
+#####################################
+# 1 - SMK Calls file
+# df_smk_calls <- read.csv(file = "C:/Users/Cathal/Downloads/_7_mergedCLLFeb_Sample_Tag_Calls.csv")
+# 
+# #"C:\Users\Cathal\Downloads\_1_Miseq2-Cartridge1_Sample_Tag_Calls.csv"
+# 
+# ## Cart 1
+# df_smk_calls_Car1 <- read.csv(file = "C:/Users/Cathal/Downloads/_1_Miseq2-Cartridge1_Sample_Tag_Calls.csv")
+# ## Cart 2
+# df_smk_calls_Car2 <- read.csv(file = "C:/Users/Cathal/Downloads/_1_Miseq2-Cartridge2_Sample_Tag_Calls.csv")
+# 
+# 
+# ## add suffix after rownames
+# df_smk_calls_Car1$Cell_Index = paste0(df_smk_calls_Car1$Cell_Index, '_1')
+# 
+# ## as character for the df that is not suffixed
+# df_smk_calls_Car2$Cell_Index <- as.character(df_smk_calls_Car2$Cell_Index)
+# 
+# ## rbind()
+# df_smk_calls_all <- rbind(df_smk_calls_Car1, df_smk_calls_Car2)
+# 
+# 
+# 
+#####################################
+# 2 - Immune Classification cell type file
+#"C:\Users\Cathal\Downloads\_1_Combined_Miseq2-Cartridge1_cell_type_experimental.csv"
+## Cart 1
+df_Immune_class_Car1 <- read.csv(file = "C:/Users/Cathal/Downloads/_1_Combined_Miseq2-Cartridge1_cell_type_experimental.csv")
+## Cart 2
+df_Immune_class_Car2 <- read.csv(file = "C:/Users/Cathal/Downloads/_1_Combined_Miseq2-Cartridge2_cell_type_experimental.csv")
+
+
+## add suffix after rownames
+df_Immune_class_Car1$Cell_Index = paste0(df_Immune_class_Car1$Cell_Index, '_1')
+
+## as character for the df that is not suffixed
+df_Immune_class_Car2$Cell_Index <- as.character(df_Immune_class_Car2$Cell_Index)
+
+## rbind()
+df_Immune_class_all <- rbind(df_Immune_class_Car1, df_Immune_class_Car2)
+
+
+###############
+## match colnames of seurat object with rownames of metadata df to be added
+## match(row names,columns names)
+# https://www.rdocumentation.org/packages/base/versions/3.6.2/topics/match
+
+
+## the output of match() will be as long as the first input in the match argument
+
+
+
+# df_match <- match(rownames(df_Immune_class_all), colnames(seurat))
+
+df_match4 <- match(df_Immune_class_all$Cell_Index, colnames(seurat), nomatch = 0)
+
+#df_match2 <- match(colnames(seurat), rownames(df_Immune_class_all))
+
+## test with a shortened df_immmune class file
+
+#df_immune_shortened <- df_Immune_class_all[1:8422,]
+
+df_match5 <- match(df_immune_shortened$Cell_Index, colnames(seurat))
+
+
+df_immune_new_w_matched_col <- df_immune_shortened %>% add_column(matched_Cell_index = df_match5)
+
+
+# add seurat col to it also to compare
+df_immune_new_w_matched_col_2 <- df_immune_new_w_matched_col %>% add_column(seu_col = colnames(seurat))
+
+
+## Notes on match() 
+### 
+## match()
+# df_match <- match(df_Immune_class$Cell_Index, colnames(seurat), nomatch = 0)
+# 
+# ## add the output from match to the Immune class df
+# df_immune_class_new <- df_Immune_class %>% add_column(matched_Cell_index_col = df_match)
+# 
+# # also add the Seurat colnames to the df to compare
+# df_immune_class_new_seu <- df_immune_class_new %>% add_column(seu_col = colnames(seurat))
+
+
+
+# 
+# 
+# 
+# 
+# #####################################
+# # 3 - LMO Calls
+# LMO_calls <- full_counts_matrix %>% select(Cell_Index:Bar2)
+# 
+# 
+# df1 <- full_join(df_smk_calls, df_Immune_class, by = "Cell_Index")
+# #
+# # as.character()
+# df1$Cell_Index <- as.character(df1$Cell_Index)
+# 
+# # join
+# df_metadata <- full_join(df1, LMO_calls, by = "Cell_Index")
+# 
+# #
+# df_metadata <- mutate_all(df_metadata, ~replace(., is.na(.), 0))
+# 
+# 
+# # re-order based on the count matrix (full_counts_matrix) in the seu object
+# 
+# match(row names,columns names)
+
+# sort the Cell_Index column in the df_metadata df to be the same as the rownames in seurat
+# df_metadata2 <- df_metadata[
+#   with(df_metadata$Cell_Index, order(full_counts_matrix$Cell_Index))
+# ]
+
+
+# drop extra rows
+# df_metadata2 <- df_metadata[1:8422,]
+#
+#
+# #df_metadata2 <- df_metadata %>% order_by()
+#
+#
+# ## Add metadata to seurat object
+# # seurat <- AddMetaData(object = seurat, metadata = df_smk_calls)
+# seurat <- AddMetaData(object = seurat, metadata = df_metadata2)
+# 
+# 
+# 
+# # ensure it is a character
+# seurat@meta.data$Sample_Name <- as.character(df_metadata2$Sample_Name)
+# seurat@meta.data$Cell_Type_Experimental <- as.character(df_metadata2$Cell_Type_Experimental)
+# seurat@meta.data$Sample_Tag <- as.character(df_metadata2$Sample_Tag)
+# seurat@meta.data$Bar1 <- as.character(df_metadata2$Bar1)
+# seurat@meta.data$Bar2 <- as.character(df_metadata2$Bar2)
+# 
+# # seurat@meta.data$Cell_Index <- NULL
+# 
+# 
+# ## check for unique entries
+# unique(seurat@meta.data$Sample_Name)
+# # see how many of each
+# table(seurat@meta.data$Sample_Name)
+# 
+# 
+# ## check for unique entries
+# unique(seurat@meta.data$Cell_Type_Experimental)
+# # see how many of each
+# table(seurat@meta.data$Cell_Type_Experimental)
+
+
+```
+
+
+# Run PCA and TSNE / UMAP and add cluster labels to metadata slot
+
+```{r}
+##########################################################################
+####################### Seurat Clustering ################################
+##########################################################################
+
+
+
+########### Example
+
+# set features
+Abseqs <- rownames(x = seurat[1:30])
+Abseqs
+#all_genes <- rownames(seurat)
+
+
+seurat <- ScaleData(seurat)
+
+seurat <- RunPCA(seurat, npcs = 8, features = Abseqs)
+
+seurat <- FindNeighbors(seurat, dims = 1:8)
+
+seurat <- RunTSNE(seurat, features = Abseqs, check_duplicates = FALSE)
+
+#seurat <- RunUMAP(seurat, dims = 1:15)
+
+seurat <- FindClusters(seurat)
+
+
+
+## examine clustering results
+
+print(seurat[["pca"]], dims = 1:5, nfeatures = 5)
+
+VizDimLoadings(seurat, dims = 1, reduction = "pca")
+VizDimLoadings(seurat, dims = 2, reduction = "pca")
+
+
+##########################################################################
+####################### SCE Clustering ###################################
+##########################################################################
+
+
+
+## convert Seurat to SCE
+
+
+# This function can produce some strange behavior so be cautious using it
+sce_conv <- as.SingleCellExperiment(seurat)
+
+
+
+## Perform calculations on SCE object
+## As per vignette found here -- http://bioconductor.org/books/3.13/OSCA.intro/analysis-overview.html#quick-start-simple
+
+
+############1
+## Feature selection for clustering
+# Abseqs
+Abseqs_sce <- rownames(x = sce_conv[1:30])
+Abseqs_sce
+
+## all rows
+#all_genes <- rownames(seurat_sce)
+
+
+############2
+## Run PCA
+# subset_row is an important parameter here as it chooses what to cluster on.
+set.seed(1234)
+sce_conv <- runPCA(sce_conv, ncomponents = 8, subset_row=Abseqs_sce)
+
+
+#3
+# Clustering.
+library(bluster) # https://bioconductor.org/packages/devel/bioc/vignettes/bluster/inst/doc/clusterRows.html#introduction
+colLabels(sce_conv) <- clusterCells(sce_conv, use.dimred='PCA',
+    BLUSPARAM=NNGraphParam(cluster.fun="louvain"))
+
+
+# 4
+# tSNE / UMAP
+sce_conv <- runTSNE(sce_conv, dimred = 'PCA')
+#sce <- runUMAP(sce, dimred = 'PCA')
+
+
+
+
+
+
+
+
+
+```
+
+
+# Sub-setting based on SMK's and LMO's.
+
+
+```{r}
+
+# DimPlot(seurat, reduction = 'tsne')
+
+
+# plotTSNE(sce_conv, colour_by="label")
+#plotUMAP(sce, colour_by="label")
+
+
+
+
+##########################################################################
+####################### Subset SMK & LMO's and plot ######################
+##########################################################################
+
+
+# Notes
+# Use Seurat object
+
+## Sub-setting based on SMK and LMO and generating plots
+
+
+## Method 1
+
+
+### P1
+# cond 1
+# LMO_1_cells_P1 <- WhichCells(seurat_all, expression = LMO_1 >= 1 & Sample_Name == 'P1')
+# # cond 2
+# LMO_2_cells_P1 <- WhichCells(seurat_all, expression = LMO_2 >= 1 & Sample_Name == 'P1')
+# 
+# 
+# DimPlot(seurat_all, reduction = "TSNE", 
+#         cells.highlight = list(LMO_1_cells_P1, LMO_2_cells_P1),
+#         cols.highlight = c("darkblue", "darkorange"), cols = "grey", sizes.highlight = 1.3) +
+#     ggtitle("SMK 2 - P1") + theme_bw() + theme(legend.position = 'top')
+# 
+# 
+# ### P2 
+# # cond 1
+# LMO_1_cells_P2 <- WhichCells(seurat_all, expression = LMO_1 >= 1 & Sample_Name == 'P2')
+# # cond 2
+# LMO_2_cells_P2 <- WhichCells(seurat_all, expression = LMO_2 >= 1 & Sample_Name == 'P2')
+# 
+# DimPlot(seurat_all, reduction = "TSNE", 
+#         cells.highlight = list(LMO_1_cells_P2, LMO_2_cells_P2),
+#         cols.highlight = c("darkblue", "darkorange"), cols = "grey", sizes.highlight = 1.3) +
+#     ggtitle("SMK 3 - P2") + theme_bw() + theme(legend.position = 'top')
+# 
+# 
+# 
+# 
+# ### P3 
+# # cond 1
+# LMO_1_cells_P3 <- WhichCells(seurat_all, expression = LMO_1 >= 1 & Sample_Name == 'P3')
+# # cond 2
+# LMO_2_cells_P3 <- WhichCells(seurat_all, expression = LMO_2 >= 1 & Sample_Name == 'P3')
+# 
+# DimPlot(seurat_all, reduction = "TSNE", 
+#         cells.highlight = list(LMO_1_cells_P3, LMO_2_cells_P3),
+#         cols.highlight = c("darkblue", "darkorange"), cols = "grey", sizes.highlight = 1.3) +
+#     ggtitle("SMK 4 - P3") + theme_bw() + theme(legend.position = 'top')
+# 
+# 
+# 
+# 
+# ### P4 
+# # cond 1
+# LMO_1_cells_P4 <- WhichCells(seurat_all, expression = LMO_1 >= 1 & Sample_Name == 'P4')
+# # cond 2
+# LMO_2_cells_P4 <- WhichCells(seurat_all, expression = LMO_2 >= 1 & Sample_Name == 'P4')
+# 
+# DimPlot(seurat_all, reduction = "TSNE", 
+#         cells.highlight = list(LMO_1_cells_P4, LMO_2_cells_P4),
+#         cols.highlight = c("darkblue", "darkorange"), cols = "grey", sizes.highlight = 1.3) +
+#     ggtitle("SMK 5 - P4") + theme_bw() + theme(legend.position = 'top')
+# 
+# 
+# ### P5 
+# # cond 1
+# LMO_1_cells_P5 <- WhichCells(seurat_all, expression = LMO_1 >= 1 & Sample_Name == 'P5')
+# # cond 2
+# LMO_2_cells_P5 <- WhichCells(seurat_all, expression = LMO_2 >= 1 & Sample_Name == 'P5')
+# 
+# DimPlot(seurat_all, reduction = "TSNE", 
+#         cells.highlight = list(LMO_1_cells_P5, LMO_2_cells_P5),
+#         cols.highlight = c("darkblue", "darkorange"), cols = "grey", sizes.highlight = 1.3) +
+#     ggtitle("SMK 6 - P5") + theme_bw() + theme(legend.position = 'top')
+
+
+######################################################################################################
+######################################################################################################
+
+
+```
+
+# Number of cells per cell type
+
+```{r}
+
+##########################################################################
+####################### No of cells per cell type ########################
+##########################################################################
+
+
+############################# subset per cell type 
+## Ident types - parsed
+## get numbers of cell types in dataset
+
+## see current Idents with
+# head(Idents(seurat))
+
+# cell_types <- levels(seurat_Abseqs)
+# 
+# # refer to a certain cell type in that list
+# #cell_types[1]
+# 
+# LMO_1_cells_P1_Test <- WhichCells(seurat_Abseqs, idents = LMO_1_cells_P1, expression = "B Cells")
+# 
+# LMO_1_cells_P1_Test <- WhichCells(seurat_Abseqs, idents = "B Cells", expression = LMO_1_cells_P1)
+# 
+# #LMO_1_cells_P1_Bcells <- subset(x = seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[1])
+# 
+# 
+# 
+# ################################ B cells
+# # P1
+# LMO_1_cells_P1_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[1])
+# LMO_2_cells_P1_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[1])
+# str(LMO_1_cells_P1_Bcells)
+# str(LMO_2_cells_P1_Bcells)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[1])
+# LMO_2_cells_P2_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[1])
+# str(LMO_1_cells_P2_Bcells)
+# str(LMO_2_cells_P2_Bcells)
+# 
+# # P3
+# LMO_1_cells_P3_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[1])
+# LMO_2_cells_P3_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[1])
+# str(LMO_1_cells_P3_Bcells)
+# str(LMO_2_cells_P3_Bcells)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[1])
+# LMO_2_cells_P4_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[1])
+# str(LMO_1_cells_P4_Bcells)
+# str(LMO_2_cells_P4_Bcells)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[1])
+# LMO_2_cells_P5_Bcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[1])
+# str(LMO_1_cells_P5_Bcells)
+# str(LMO_2_cells_P5_Bcells)
+# 
+# 
+# ############################### T cells
+# # P1
+# LMO_1_cells_P1_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[3])
+# LMO_2_cells_P1_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[3])
+# str(LMO_1_cells_P1_Tcells)
+# str(LMO_2_cells_P1_Tcells)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[3])
+# LMO_2_cells_P2_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[3])
+# str(LMO_1_cells_P2_Tcells)
+# str(LMO_2_cells_P2_Tcells)
+# 
+# # P3
+# LMO_1_cells_P3_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[3])
+# LMO_2_cells_P3_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[3])
+# str(LMO_1_cells_P3_Tcells)
+# str(LMO_2_cells_P3_Tcells)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[3])
+# LMO_2_cells_P4_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[3])
+# str(LMO_1_cells_P4_Tcells)
+# str(LMO_2_cells_P4_Tcells)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[3])
+# LMO_2_cells_P5_Tcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[3])
+# str(LMO_1_cells_P5_Tcells)
+# str(LMO_2_cells_P5_Tcells)
+# 
+# 
+# 
+# ########################### NK cells
+# # P1
+# LMO_1_cells_P1_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[4])
+# LMO_2_cells_P1_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[4])
+# str(LMO_1_cells_P1_NKcells)
+# str(LMO_2_cells_P1_NKcells)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[4])
+# LMO_2_cells_P2_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[4])
+# str(LMO_1_cells_P2_NKcells)
+# str(LMO_2_cells_P2_NKcells)
+# 
+# # P3
+# LMO_1_cells_P3_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[4])
+# LMO_2_cells_P3_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[4])
+# str(LMO_1_cells_P3_NKcells)
+# str(LMO_2_cells_P3_NKcells)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[4])
+# LMO_2_cells_P4_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[4])
+# str(LMO_1_cells_P4_NKcells)
+# str(LMO_2_cells_P4_NKcells)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[4])
+# LMO_2_cells_P5_NKcells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[4])
+# str(LMO_1_cells_P5_NKcells)
+# str(LMO_2_cells_P5_NKcells)
+# 
+# 
+# ############################ CD 27
+# # P1
+# LMO_1_cells_P1_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[5])
+# LMO_2_cells_P1_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[5])
+# str(LMO_1_cells_P1_CD27cells)
+# str(LMO_2_cells_P1_CD27cells)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[5])
+# LMO_2_cells_P2_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[5])
+# str(LMO_1_cells_P2_CD27cells)
+# str(LMO_2_cells_P2_CD27cells)
+# 
+# # P3
+# LMO_1_cells_P3_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[5])
+# LMO_2_cells_P3_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[5])
+# str(LMO_1_cells_P3_CD27cells)
+# str(LMO_2_cells_P3_CD27cells)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[5])
+# LMO_2_cells_P4_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[5])
+# str(LMO_1_cells_P4_CD27cells)
+# str(LMO_2_cells_P4_CD27cells)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[5])
+# LMO_2_cells_P5_CD27cells <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[5])
+# str(LMO_1_cells_P5_CD27cells)
+# str(LMO_2_cells_P5_CD27cells)
+# 
+# 
+# 
+# ########################### Monocytes
+# # P1
+# LMO_1_cells_P1_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[6])
+# LMO_2_cells_P1_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[6])
+# str(LMO_1_cells_P1_Monocytes)
+# str(LMO_2_cells_P1_Monocytes)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[6])
+# LMO_2_cells_P2_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[6])
+# str(LMO_1_cells_P2_Monocytes)
+# str(LMO_2_cells_P2_Monocytes)
+# 
+# # P3
+# LMO_1_cells_P3_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[6])
+# LMO_2_cells_P3_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[6])
+# str(LMO_1_cells_P3_Monocytes)
+# str(LMO_2_cells_P3_Monocytes)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[6])
+# LMO_2_cells_P4_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[6])
+# str(LMO_1_cells_P4_Monocytes)
+# str(LMO_2_cells_P4_Monocytes)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[6])
+# LMO_2_cells_P5_Monocytes <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[6])
+# str(LMO_1_cells_P5_Monocytes)
+# str(LMO_2_cells_P5_Monocytes)
+# 
+# 
+# 
+# 
+# ############################CD4
+# # P1
+# LMO_1_cells_P1_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[7])
+# LMO_2_cells_P1_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[7])
+# str(LMO_1_cells_P1_CD4)
+# str(LMO_2_cells_P1_CD4)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[7])
+# LMO_2_cells_P2_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[7])
+# str(LMO_1_cells_P2_CD4)
+# str(LMO_2_cells_P2_CD4)
+# 
+# # P3
+# LMO_1_cells_P3_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[7])
+# LMO_2_cells_P3_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[7])
+# str(LMO_1_cells_P3_CD4)
+# str(LMO_2_cells_P3_CD4)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[7])
+# LMO_2_cells_P4_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[7])
+# str(LMO_1_cells_P4_CD4)
+# str(LMO_2_cells_P4_CD4)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[7])
+# LMO_2_cells_P5_CD4 <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[7])
+# str(LMO_1_cells_P5_CD4)
+# str(LMO_2_cells_P5_CD4)
+# 
+# 
+# ############################ Undetermined
+# # P1
+# LMO_1_cells_P1_Undet <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P1, idents = cell_types[2])
+# LMO_2_cells_P1_Undet <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P1, idents = cell_types[2])
+# str(LMO_1_cells_P1_Undet)
+# str(LMO_2_cells_P1_Undet)
+# 
+# 
+# # P2
+# LMO_1_cells_P2_Undet <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P2, idents = cell_types[2])
+# LMO_2_cells_P2_Undet <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P2, idents = cell_types[2])
+# str(LMO_1_cells_P2_Undet)
+# str(LMO_2_cells_P2_Undet)
+# 
+# # P3
+# LMO_1_cells_P3_Undet <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P3, idents = cell_types[2])
+# LMO_2_cells_P3_Undet <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P3, idents = cell_types[2])
+# str(LMO_1_cells_P3_Undet)
+# str(LMO_2_cells_P3_Undet)
+# 
+# 
+# # P4
+# LMO_1_cells_P4_Undet <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P4, idents = cell_types[2])
+# LMO_2_cells_P4_Undet <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P4, idents = cell_types[2])
+# str(LMO_1_cells_P4_Undet)
+# str(LMO_2_cells_P4_Undet)
+# 
+# 
+# # P5
+# LMO_1_cells_P5_Undet <- WhichCells(seurat_Abseqs, cells = LMO_1_cells_P5, idents = cell_types[2])
+# LMO_2_cells_P5_Undet <- WhichCells(seurat_Abseqs, cells = LMO_2_cells_P5, idents = cell_types[2])
+# str(LMO_1_cells_P5_Undet)
+# str(LMO_2_cells_P5_Undet)
+
+
+```
+
+
+
+# Dotplots
+
+```{r}
+##########################################################################
+############################ Dotplots ####################################
+##########################################################################
+
+
+
+########## RNA Dotplot
+
+
+# rna_list <- c('CD3E',
+#               'CD4',
+#               'CD8A',
+#               'MS4A1',
+#               'CD14',
+#               'FCGR3A',
+#               'ITGAM',
+#               'CD5',
+#               'FCER2',
+#               'IL2RA',
+#               'CD69',
+#               'CD22',
+#               'CD79B')
+
+#cl_idents2 <- levels(seurat_all3)
+
+# The idents argument will refer to the y-axis below
+# DotPlot(seurat_all, features = rna_list, group.by = 'label', idents = cl_idents) + RotatedAxis()
+# 
+# 
+# 
+# 
+# 
+# 
+# ######### Abseq dotplot
+# 
+# 
+# # Use Idents from above on y-axis
+# 
+# 
+# # DotPlot(seurat_sce2, features = Abseqs, group.by = 'singler_labels') + RotatedAxis()
+# 
+# 
+# 
+# ## DOTPLOT
+# DotPlot(seurat_Abseqs, features = Abseqs, group.by = 'label') + RotatedAxis()
+# #DotPlot(seurat_Abseqs, features = Abseqs, idents = cl_idents) + RotatedAxis() 
+# 
+# DotPlot(seurat_Abseqs, features = Abseqs, group.by = 'label') + RotatedAxis()
+# 
+# 
+# 
+# ## Abseq Dotplot with idents
+# 
+# # levels() will check identity classes
+# # levels(x = pbmc_small) <- c('C', 'A', 'B')
+# 
+# cl_idents2 <- levels(seurat_Abseqs) 
+# DotPlot(seurat_Abseqs, features = Abseqs, idents = cl_idents2) + RotatedAxis() 
+
+
+
+
+
+```
+
+
+
+
