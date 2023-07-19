@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# rename FASTQ file names so that they are in the standard Illumina format. Useful for running cellranger count.
+
 # Set the path to the directory containing the files
 directory_path="/path/to/your/files"
 
