@@ -1,4 +1,6 @@
-##
+## subset object to only contain cells from a certain Ident in the Seurat object. For example below, subset the Seurat object to only contain cells labelled as Monocytes.
+
+#
 library(Seurat)
 library(SeuratObject)
 
