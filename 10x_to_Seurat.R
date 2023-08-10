@@ -1,4 +1,5 @@
-# 10x to Seurat
+# import 10x single-cell data to a Seurat object
+# some other functions to check data
 
 
 library(Seurat)
