@@ -1,0 +1,459 @@
+---
+title: "ST_deconv_dstream"
+output: html_document
+date: "2023-09-06"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(SpatialExperiment)
+library(STdeconvolve)
+library(tidyverse)
+library(ggspavis)
+```
+
+# STDeconvolve 
+
+
+```{r}
+
+# path must contain a 10x "/outs/" folder
+sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/D1/outs")
+# read in
+D1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+D1_spe
+# View image in SPE object
+plotVisium(D1_spe) + ggtitle("Sample D on Visium capture area")
+#
+pos <- SpatialExperiment::spatialCoords(D1_spe)
+colnames(pos)
+plot(pos) # it initially appears flipped clockwise by 90 degrees, as was the same for her example (except hers rotates anti-clockwise initially)
+
+##
+#scalefactor <- 0.051033426
+#img <- png::readPNG(paste0(sample, '/spatial/tissue_lowres_image.png'))
+
+##
+colnames(pos)<-c("x","y")
+pos <- as.data.frame(pos)
+
+cd <- D1_spe@assays@data@listData$counts
+#
+D1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
+# ## choose optimal number of cell-types
+#ldas2 <- fitLDA(t(as.matrix(D1_spe)), Ks = seq(2, 9, by = 1))
+ldas <- fitLDA(t(as.matrix(D1_spe)), Ks = c(2))
+optLDA <- optimalModel(models = ldas, opt = 2)
+results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
+#
+deconProp <- results$theta
+deconGexp <- results$beta
+#
+pos$y <- pos$y * -1
+plot(pos, main = "Plot D on Visium capture area")
+#
+# plot
+vizAllTopics(theta = deconProp,
+                   pos = pos,
+                   r = 95,
+                   lwd = 0,
+                   showLegend = TRUE,
+                   plotTitle = "Visualize all cell-type proportions across pixels - sample D")
+
+
+
+######### now try some downstream stuff
+# visualize each deconvolved cell-type separately:
+ps <- lapply(colnames(deconProp), function(celltype) {
+  
+  vizTopic(theta = deconProp, pos = pos, topic = celltype, plotTitle = paste0("X", celltype),
+         size = 2, stroke = 1, alpha = 0.5,
+         low = "white",
+         high = "blue") +
+    
+    ## remove the pixel "Groups", which is the color aesthetic for the pixel borders
+    ggplot2::guides(colour = "none")
+  
+})
+gridExtra::grid.arrange(
+  grobs = ps,
+  layout_matrix = rbind(c(1, 2, 3, 4),
+                        c(5, 6, 7, 8),
+                        c(9, 10, 11, 12),
+                        c(13, 14, 15, 16))
+)
+## above works
+
+
+# read in D1_spe again
+# sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/D1/outs")
+# D1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+# D1_spe
+# geneSymbols <- D1_spe@rowRanges@elementMetadata$symbol
+# names(geneSymbols) <- names(D1_spe@rowRanges)
+# geneSymbols[1:5]
+# colnames(deconGexp) <- geneSymbols[colnames(deconGexp)]
+# deconGexp[1:3,1:5]
+# # Now, let’s get the differentially expressed genes for each deconvolved cell-type transcriptional profile and label the top expressed genes for each cell-type:
+# ps <- lapply(colnames(deconProp), function(celltype) {
+#   
+#   celltype <- as.numeric(celltype)
+#   ## highly expressed in cell-type of interest
+#   highgexp <- names(which(deconGexp[celltype,] > 3))
+#   ## high log2(fold-change) compared to other deconvolved cell-types
+#   log2fc <- sort(log2(deconGexp[celltype,highgexp]/colMeans(deconGexp[-celltype,highgexp])), decreasing=TRUE)
+#   markers <- names(log2fc)[1] ## label just the top gene
+#   
+#   # -----------------------------------------------------
+#   ## visualize the transcriptional profile
+#   dat <- data.frame(values = as.vector(log2fc), genes = names(log2fc), order = seq(length(log2fc)))
+#   # Hide all of the text labels.
+#   dat$selectedLabels <- ""
+#   dat$selectedLabels[1] <- markers
+#   
+#   plt <- ggplot2::ggplot(data = dat) +
+#     ggplot2::geom_col(ggplot2::aes(x = order, y = values,
+#                                    fill = factor(selectedLabels == ""),
+#                                    color = factor(selectedLabels == "")), width = 1) +
+#     
+#     ggplot2::scale_fill_manual(values = c("darkblue",
+#                                           "darkblue"
+#                                           )) +
+#     ggplot2::scale_color_manual(values = c("darkblue",
+#                                           "darkblue"
+#                                           )) +
+#     
+#     ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(min(log2fc) - 0.3, max(log2fc) + 0.3)) +
+#     # ggplot2::scale_x_continuous(expand = c(0, 0), limits = c(-2, NA)) +
+#     
+#     ggplot2::labs(title = paste0("X", celltype),
+#                   x = "Gene expression rank",
+#                   y = "log2(FC)") +
+#     
+#     ## placement of gene symbol labels of top genes
+#     ggplot2::geom_text(ggplot2::aes(x = order+1, y = values-0.1, label = selectedLabels), color = "red") +
+#     
+#     ggplot2::theme_classic() +
+#     ggplot2::theme(axis.text.x = ggplot2::element_text(size=15, color = "black"),
+#                    axis.text.y = ggplot2::element_text(size=15, color = "black"),
+#                    axis.title.y = ggplot2::element_text(size=15, color = "black"),
+#                    axis.title.x = ggplot2::element_text(size=15, color = "black"),
+#                    axis.ticks.x = ggplot2::element_blank(),
+#                    plot.title = ggplot2::element_text(size=15),
+#                    legend.text = ggplot2::element_text(size = 15, colour = "black"),
+#                    legend.title = ggplot2::element_text(size = 15, colour = "black", angle = 90),
+#                    panel.background = ggplot2::element_blank(),
+#                    plot.background = ggplot2::element_blank(),
+#                    panel.grid.major.y = ggplot2::element_line(size = 0.3, colour = "gray80"),
+#                    axis.line = ggplot2::element_line(size = 1, colour = "black"),
+#                    legend.position="none"
+#                    )
+#   plt
+# })
+# gridExtra::grid.arrange(
+#   grobs = ps,
+#   layout_matrix = rbind(c(1, 2, 3, 4),
+#                         c(5, 6, 7, 8),
+#                         c(9, 10, 11, 12),
+#                         c(13, 14, 15, 16))
+# )
+
+```
+
+# sample C
+
+```{r}
+
+# path must contain a 10x "/outs/" folder
+sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/C1/outs")
+# read in
+C1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+C1_spe
+# View image in SPE object
+plotVisium(C1_spe) + ggtitle("Plot C on Visium capture area")
+#
+pos <- SpatialExperiment::spatialCoords(C1_spe)
+colnames(pos)
+plot(pos) # it initially appears flipped clockwise by 90 degrees, as was the same for her example (except hers rotates anti-clockwise initially)
+
+##
+scalefactor <- 0.051033426
+img <- png::readPNG(paste0(sample, '/spatial/tissue_lowres_image.png'))
+
+##
+colnames(pos)<-c("x","y")
+pos <- as.data.frame(pos)
+
+cd <- C1_spe@assays@data@listData$counts
+#
+C1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
+# ## choose optimal number of cell-types
+ldas2 <- fitLDA(t(as.matrix(C1_spe)), Ks = seq(2, 9, by = 1))
+ldas <- fitLDA(t(as.matrix(C1_spe)), Ks = c(8))
+optLDA <- optimalModel(models = ldas, opt = 8)
+results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
+#
+deconProp <- results$theta
+deconGexp <- results$beta
+#
+pos$y <- pos$y * -1
+plot(pos, main = "Position of Pixels - sample C")
+#
+# plot
+vizAllTopics(theta = deconProp,
+                   pos = pos,
+                   r = 95,
+                   lwd = 0,
+                   showLegend = TRUE,
+                   plotTitle = "Visualize all cell-type proportions across pixels - sample C")
+
+
+
+######### now try some downstream stuff
+# visualize each deconvolved cell-type separately:
+ps <- lapply(colnames(deconProp), function(celltype) {
+  
+  vizTopic(theta = deconProp, pos = pos, topic = celltype, plotTitle = paste0("X", celltype),
+         size = 2, stroke = 1, alpha = 0.5,
+         low = "white",
+         high = "blue") +
+    
+    ## remove the pixel "Groups", which is the color aesthetic for the pixel borders
+    ggplot2::guides(colour = "none")
+  
+})
+gridExtra::grid.arrange(
+  grobs = ps,
+  layout_matrix = rbind(c(1, 2, 3, 4),
+                        c(5, 6, 7, 8),
+                        c(9, 10, 11, 12),
+                        c(13, 14, 15, 16))
+)
+## above works
+
+
+# Let’s visualize some marker genes for each deconvolved cell-type using the deconvolved transcriptional profiles in the beta matrix (deconGexp).
+# We will define the top marker genes here as genes highly expressed in the deconvolved cell-type (count > 2) that also have the highest log2(fold change) when comparing the deconvolved cell-type’s expression profile to the average of all other deconvolved cell-types’ expression profiles.
+# read in D1_spe again
+
+# sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/C1/outs")
+# C1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+# C1_spe
+# geneSymbols <- C1_spe@rowRanges@elementMetadata$symbol
+# names(geneSymbols) <- names(C1_spe@rowRanges)
+# geneSymbols[1:5]
+# colnames(deconGexp) <- geneSymbols[colnames(deconGexp)]
+# deconGexp[1:3,1:5]
+# # Now, let’s get the differentially expressed genes for each deconvolved cell-type transcriptional profile and label the top expressed genes for each cell-type:
+# ps <- lapply(colnames(deconProp), function(celltype) {
+#   
+#   celltype <- as.numeric(celltype)
+#   ## highly expressed in cell-type of interest
+#   highgexp <- names(which(deconGexp[celltype,] > 3))
+#   ## high log2(fold-change) compared to other deconvolved cell-types
+#   log2fc <- sort(log2(deconGexp[celltype,highgexp]/colMeans(deconGexp[-celltype,highgexp])), decreasing=TRUE)
+#   markers <- names(log2fc)[1] ## label just the top gene
+#   
+#   # -----------------------------------------------------
+#   ## visualize the transcriptional profile
+#   dat <- data.frame(values = as.vector(log2fc), genes = names(log2fc), order = seq(length(log2fc)))
+#   # Hide all of the text labels.
+#   dat$selectedLabels <- ""
+#   dat$selectedLabels[1] <- markers
+#   
+#   plt <- ggplot2::ggplot(data = dat) +
+#     ggplot2::geom_col(ggplot2::aes(x = order, y = values,
+#                                    fill = factor(selectedLabels == ""),
+#                                    color = factor(selectedLabels == "")), width = 1) +
+#     
+#     ggplot2::scale_fill_manual(values = c("darkblue",
+#                                           "darkblue"
+#                                           )) +
+#     ggplot2::scale_color_manual(values = c("darkblue",
+#                                           "darkblue"
+#                                           )) +
+#     
+#     ggplot2::scale_y_continuous(expand = c(0, 0), limits = c(min(log2fc) - 0.3, max(log2fc) + 0.3)) +
+#     # ggplot2::scale_x_continuous(expand = c(0, 0), limits = c(-2, NA)) +
+#     
+#     ggplot2::labs(title = paste0("X", celltype),
+#                   x = "Gene expression rank",
+#                   y = "log2(FC)") +
+#     
+#     ## placement of gene symbol labels of top genes
+#     ggplot2::geom_text(ggplot2::aes(x = order+1, y = values-0.1, label = selectedLabels), color = "red") +
+#     
+#     ggplot2::theme_classic() +
+#     ggplot2::theme(axis.text.x = ggplot2::element_text(size=15, color = "black"),
+#                    axis.text.y = ggplot2::element_text(size=15, color = "black"),
+#                    axis.title.y = ggplot2::element_text(size=15, color = "black"),
+#                    axis.title.x = ggplot2::element_text(size=15, color = "black"),
+#                    axis.ticks.x = ggplot2::element_blank(),
+#                    plot.title = ggplot2::element_text(size=15),
+#                    legend.text = ggplot2::element_text(size = 15, colour = "black"),
+#                    legend.title = ggplot2::element_text(size = 15, colour = "black", angle = 90),
+#                    panel.background = ggplot2::element_blank(),
+#                    plot.background = ggplot2::element_blank(),
+#                    panel.grid.major.y = ggplot2::element_line(size = 0.3, colour = "gray80"),
+#                    axis.line = ggplot2::element_line(size = 1, colour = "black"),
+#                    legend.position="none"
+#                    )
+#   plt
+# })
+# gridExtra::grid.arrange(
+#   grobs = ps,
+#   layout_matrix = rbind(c(1, 2, 3, 4),
+#                         c(5, 6, 7, 8),
+#                         c(9, 10, 11, 12),
+#                         c(13, 14, 15, 16))
+# )
+
+```
+
+
+```{r}
+# path must contain a 10x "/outs/" folder
+sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/A1/outs")
+# read in
+A1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+A1_spe
+# View image in SPE object
+plotVisium(A1_spe) + ggtitle("Plot A on Visium capture area")
+#
+pos <- SpatialExperiment::spatialCoords(A1_spe)
+colnames(pos)
+plot(pos) # it initially appears flipped clockwise by 90 degrees, as was the same for her example (except hers rotates anti-clockwise initially)
+
+##
+colnames(pos)<-c("x","y")
+pos <- as.data.frame(pos)
+
+cd <- A1_spe@assays@data@listData$counts
+#
+A1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
+# ## choose optimal number of cell-types
+#ldas2 <- fitLDA(t(as.matrix(D1_spe)), Ks = seq(2, 5, by = 1))
+ldas <- fitLDA(t(as.matrix(A1_spe)), Ks = c(8))
+optLDA <- optimalModel(models = ldas, opt = 8)
+results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
+#
+deconProp <- results$theta
+deconGexp <- results$beta
+#
+pos$y <- pos$y * -1
+plot(pos, main = "Position of Pixels - sample A")
+#
+# plot
+vizAllTopics(theta = deconProp,
+                   pos = pos,
+                   r = 95,
+                   lwd = 0,
+                   showLegend = TRUE,
+                   plotTitle = "Visualize all cell-type proportions across pixels - sample A")
+
+
+
+######### now try some downstream stuff
+# visualize each deconvolved cell-type separately:
+ps <- lapply(colnames(deconProp), function(celltype) {
+  
+  vizTopic(theta = deconProp, pos = pos, topic = celltype, plotTitle = paste0("X", celltype),
+         size = 2, stroke = 1, alpha = 0.5,
+         low = "white",
+         high = "blue") +
+    
+    ## remove the pixel "Groups", which is the color aesthetic for the pixel borders
+    ggplot2::guides(colour = "none")
+  
+})
+gridExtra::grid.arrange(
+  grobs = ps,
+  layout_matrix = rbind(c(1, 2, 3, 4),
+                        c(5, 6, 7, 8),
+                        c(9, 10, 11, 12),
+                        c(13, 14, 15, 16))
+)
+## above works
+
+```
+
+# sample B
+
+```{r}
+
+# path must contain a 10x "/outs/" folder
+sample <- file.path("/Users/cathal.king/Documents/Projects/DL/Visium_Mouse/New_SpaceRanger_Outs/B1/outs")
+# read in
+B1_spe <- read10xVisium(samples = sample, type = "sparse", images = "lowres")
+B1_spe
+# View image in SPE object
+plotVisium(B1_spe) + ggtitle("Sample B on Visium capture area")
+#
+pos <- SpatialExperiment::spatialCoords(B1_spe)
+colnames(pos)
+plot(pos) # it initially appears flipped clockwise by 90 degrees, as was the same for her example (except hers rotates anti-clockwise initially)
+
+##
+#scalefactor <- 0.051033426
+#img <- png::readPNG(paste0(sample, '/spatial/tissue_lowres_image.png'))
+
+##
+colnames(pos)<-c("x","y")
+pos <- as.data.frame(pos)
+
+cd <- B1_spe@assays@data@listData$counts
+#
+B1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
+# ## choose optimal number of cell-types
+#ldas2 <- fitLDA(t(as.matrix(B1_spe)), Ks = seq(2, 9, by = 1))
+ldas <- fitLDA(t(as.matrix(B1_spe)), Ks = c(2))
+optLDA <- optimalModel(models = ldas, opt = 2)
+results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
+#
+deconProp <- results$theta
+deconGexp <- results$beta
+#
+pos$y <- pos$y * -1
+plot(pos, main = "Plot B on Visium capture area")
+#
+# plot
+vizAllTopics(theta = deconProp,
+                   pos = pos,
+                   r = 95,
+                   lwd = 0,
+                   showLegend = TRUE,
+                   plotTitle = "Visualize all cell-type proportions across pixels - sample D")
+
+
+
+######### now try some downstream stuff
+# visualize each deconvolved cell-type separately:
+ps <- lapply(colnames(deconProp), function(celltype) {
+  
+  vizTopic(theta = deconProp, pos = pos, topic = celltype, plotTitle = paste0("X", celltype),
+         size = 2, stroke = 1, alpha = 0.5,
+         low = "white",
+         high = "blue") +
+    
+    ## remove the pixel "Groups", which is the color aesthetic for the pixel borders
+    ggplot2::guides(colour = "none")
+  
+})
+gridExtra::grid.arrange(
+  grobs = ps,
+  layout_matrix = rbind(c(1, 2, 3, 4),
+                        c(5, 6, 7, 8),
+                        c(9, 10, 11, 12),
+                        c(13, 14, 15, 16))
+)
+## above works
+
+```
+
+
+
