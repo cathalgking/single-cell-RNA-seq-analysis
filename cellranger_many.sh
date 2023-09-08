@@ -16,6 +16,7 @@ declare -A DATA
 # each DATA below corresponds to the first part of the FASTQ file name for example "21-01877_S1_L001_R2_001.fastq.gz"
 # cellranger requires Illumina format FASTQ file names
 # paired-end sequencing
+# make sure the --array in the SLURM header above is set to the number of samples in the DATA variable array below.
 
 DATA[1]='21-01749'
 DATA[2]='21-01750'
