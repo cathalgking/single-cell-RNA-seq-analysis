@@ -57,7 +57,7 @@ deconGexp <- results$beta
 pos$y <- pos$y * -1
 plot(pos, main = "Plot D on Visium capture area")
 #
-# plot
+# plot_pies
 vizAllTopics(theta = deconProp,
                    pos = pos,
                    r = 95,
@@ -337,9 +337,9 @@ cd <- A1_spe@assays@data@listData$counts
 #
 A1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
 # ## choose optimal number of cell-types
-#ldas2 <- fitLDA(t(as.matrix(D1_spe)), Ks = seq(2, 5, by = 1))
-ldas <- fitLDA(t(as.matrix(A1_spe)), Ks = c(8))
-optLDA <- optimalModel(models = ldas, opt = 8)
+ldas2 <- fitLDA(t(as.matrix(A1_spe)), Ks = seq(2, 9, by = 1))
+ldas <- fitLDA(t(as.matrix(A1_spe)), Ks = c(2))
+optLDA <- optimalModel(models = ldas, opt = 2)
 results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
 #
 deconProp <- results$theta
@@ -410,10 +410,13 @@ cd <- B1_spe@assays@data@listData$counts
 #
 B1_spe <- restrictCorpus(cd, removeAbove=1.0, removeBelow = 0.05, nTopOD = 1000)
 # ## choose optimal number of cell-types
-#ldas2 <- fitLDA(t(as.matrix(B1_spe)), Ks = seq(2, 9, by = 1))
-ldas <- fitLDA(t(as.matrix(B1_spe)), Ks = c(2))
-optLDA <- optimalModel(models = ldas, opt = 2)
+ldas2 <- fitLDA(t(as.matrix(B1_spe)), Ks = seq(2, 15, by = 1))
+ldas <- fitLDA(t(as.matrix(B1_spe)), Ks = c(16))
+optLDA <- optimalModel(models = ldas, opt = 16)
 results <- getBetaTheta(optLDA, perc.filt = 0.05, betaScale = 1000)
+#
+
+
 #
 deconProp <- results$theta
 deconGexp <- results$beta
