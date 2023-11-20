@@ -1,3 +1,10 @@
+# Use the SoupX R package to correct single-cell count matrices for potential Ambient RNA contamination.
+# This works for a directory structure where there are multiple cellranger outputs under each folder specified in the 'starting_dir'
+# For example the "patient_1" folder is directly under the "starting_dir" and that "patient_1" folder contains 3 10x single-cell outputs.
+# 'output.dir' needs to be made first with mkdir
+# specify the % of Ambient contamination (estimate) in the "setContaminationFraction()" function.
+# When complete, 'output.dir' will contain a set of Seurat objects contained within .rds files.
+
 ###
 library(SoupX)
 library(Seurat)
