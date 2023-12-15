@@ -1,3 +1,5 @@
+conda activate /cancer/storage/tools/conda_apps/r-seurat/
+
 # Use the SoupX R package to correct single-cell count matrices for potential Ambient RNA contamination.
 # This works for a directory structure where there are multiple cellranger outputs under each folder specified in the 'starting_dir'
 # For example the "patient_1" folder is directly under the "starting_dir" and that "patient_1" folder contains 3 10x single-cell outputs.
