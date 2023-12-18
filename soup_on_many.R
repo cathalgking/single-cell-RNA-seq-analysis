@@ -24,6 +24,7 @@ for (first_level_subdir in first_level_subdirs) {
 }
 subdirs_two_levels_down <- subdirs_two_levels_down[c(4:9,13:15,20:22,29:31,35:37)]
 
+# set the location for the output files.
 output.dir <- '/homes/cathal.king/Myeloma/soup_corrected_matrices_6p/'
 
 # start the loop
