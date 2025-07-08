@@ -1,3 +1,5 @@
+# R script to run Leiden clustering on SingleCellExperiment object(s)
+
 library(SingleCellExperiment)
 library(ggplot2)
 library(scater)
